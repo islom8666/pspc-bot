@@ -33,7 +33,7 @@ LINE = "_" * 41
 SEP_LINE_RE = re.compile(r'^[\s\-–—―━═▬➖_=·•.*~]+$', re.M)
 REGION_RE = re.compile(r'^\s*Region\s*:.*$', re.M | re.I)
 PAY_RE = re.compile(r'^.*\b(USDT|YANDEX|BTC|XRP|TONCOIN)\b.*$', re.M | re.I)
-SELLER_RE = re.compile(r'\s*/\s*/.*$', re.M)   # "45$ / / kurbars69" -> "45$"
+SELLER_RE = re.compile(r'\s*[/⁄∕／|]\s*[/⁄∕／|].*$', re.M)   # "45$ / / kurbars69" -> "45$"
 
 
 def fix_text(text):
@@ -88,6 +88,7 @@ async def purge_target(client):
 async def main():
     state = load_state()
     async with TelegramClient(StringSession(SESSION), API_ID, API_HASH) as client:
+        client.parse_mode = None   # matn aynan shunday yuborilsin (___ chiziqlar buzilmasin)
         if state is None:
             # Yangi tizimga birinchi o'tish: kanalni tozalab, hammasini boshidan ko'chiramiz
             await purge_target(client)
@@ -116,7 +117,7 @@ async def main():
         new = sorted((m for m in all_msgs if m.id > state["last_id"]), key=lambda m: m.id)
         groups = []
         for m in new:
-            if m.action or (not m.text and not m.media):
+            if m.action or (not m.raw_text and not m.media):
                 continue
             if m.grouped_id and groups and groups[-1][0].grouped_id == m.grouped_id:
                 groups[-1].append(m)
@@ -124,7 +125,7 @@ async def main():
                 groups.append([m])
 
         for g in groups[:MAX_PER_RUN]:
-            caption = fix_text(next((m.text for m in g if m.text), ""))
+            caption = fix_text(next((m.raw_text for m in g if m.raw_text), ""))
             media = [m.media for m in g if m.media]
             if media:
                 sent = await client.send_file(TARGET, media if len(media) > 1 else media[0], caption=caption)
