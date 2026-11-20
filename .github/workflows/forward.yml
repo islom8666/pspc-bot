@@ -9,9 +9,11 @@ concurrency: forward
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -24,9 +26,14 @@ jobs:
           TARGET: ${{ secrets.TARGET }}
           CONTACT: ${{ secrets.CONTACT }}
       - name: Save state
+        if: always()
         run: |
+          cp last_id.txt /tmp/state.txt
           git config user.name "bot"
           git config user.email "bot@users.noreply.github.com"
+          git fetch origin main
+          git reset --hard origin/main
+          cp /tmp/state.txt last_id.txt
           git add last_id.txt
           git commit -m "update last_id" || echo "o'zgarish yo'q"
           git push
