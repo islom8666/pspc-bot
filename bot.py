@@ -29,6 +29,7 @@ def add_price(m):
     return m.group('pre') + new if m.group('a') else new + m.group('post')
 
 
+LINE = "_" * 41
 SEP_LINE_RE = re.compile(r'^[\s\-–—―━═▬➖_=·•.*~]+$', re.M)
 REGION_RE = re.compile(r'^\s*Region\s*:.*$', re.M | re.I)
 PAY_RE = re.compile(r'^.*\b(USDT|YANDEX|BTC|XRP|TONCOIN)\b.*$', re.M | re.I)
@@ -44,8 +45,20 @@ def fix_text(text):
     text = USERNAME_RE.sub('', text)
     text = PHONE_RE.sub('', text)
     text = PRICE_RE.sub(add_price, text)
-    text = re.sub(r'\n{3,}', '\n\n', text).strip()
-    return f"{text}\n\n{CONTACT}".strip()
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    price = [l for l in lines if re.search(r'price|narx|цена', l, re.I)]
+    only = [l for l in lines if re.fullmatch(r'only\s*ps\s*[45]', l, re.I)]
+    games = [l for l in lines if l not in price and l not in only]
+    out = ""
+    if games:
+        out += f"{LINE}\n\n" + "\n".join(games) + f"\n{LINE}\n"
+    if only:
+        out += "\n".join(o.title().replace("Ps", "PS") for o in only) + "\n"
+    elif games:
+        out += "\n"
+    if price:
+        out += "\n".join(price) + "\n"
+    return f"{out}\n{CONTACT}".strip()
 
 
 def load_state():
