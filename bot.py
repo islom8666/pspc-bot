@@ -1,5 +1,7 @@
-# PS.PC — PSN OFFLINE kanalidan yangi postlarni ko'chirish (GitHub Actions uchun)
-import os, re, asyncio
+# PS.PC — PSN OFFLINE kanalini @psakkaunt bilan sinxronlash (GitHub Actions uchun)
+# - yangi postlarni ko'chiradi (narx +40$, kontakt almashtiriladi)
+# - manba kanalda o'chirilgan postlarni sizning kanalingizdan ham o'chiradi
+import os, re, json, asyncio
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
@@ -7,11 +9,11 @@ API_ID = int(os.environ["API_ID"])
 API_HASH = os.environ["API_HASH"]
 SESSION = os.environ["SESSION"]
 SOURCE = int(os.environ.get("SOURCE", "-1002567127698"))  # PSN OFFLINE
-TARGET = os.environ["TARGET"]                              # @sizning_kanalingiz
+TARGET = os.environ["TARGET"]                              # @psakkaunt
 CONTACT = os.environ.get("CONTACT", "📩 Buyurtma uchun: @PSPC_admin")
 ADD_USD = float(os.environ.get("ADD_USD", "40"))
-STATE = "last_id.txt"
-MAX_PER_RUN = 25   # bir ishga tushishda eng ko'pi bilan shuncha post
+STATE = "last_id.txt"      # ichida JSON saqlanadi: oxirgi id + postlar xaritasi
+MAX_PER_RUN = 25           # bir ishga tushishda eng ko'pi bilan shuncha yangi post
 
 PRICE_RE = re.compile(
     r'(?P<pre>\$\s?)(?P<a>\d+(?:[.,]\d+)?)'
@@ -36,37 +38,85 @@ def fix_text(text):
     return f"{text}\n\n{CONTACT}".strip()
 
 
+def load_state():
+    try:
+        data = json.load(open(STATE))
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return None  # eski format yoki fayl yo'q
+
+
+def save_state(state):
+    json.dump(state, open(STATE, "w"))
+
+
+async def purge_target(client):
+    ids = [m.id async for m in client.iter_messages(TARGET)]
+    for i in range(0, len(ids), 100):
+        try:
+            await client.delete_messages(TARGET, ids[i:i + 100])
+        except Exception as e:
+            print("O'chirishda xato:", e)
+    print("Kanal tozalandi:", len(ids), "ta xabar")
+
+
 async def main():
-    last_id = int(open(STATE).read().strip()) if os.path.exists(STATE) else 0
+    state = load_state()
     async with TelegramClient(StringSession(SESSION), API_ID, API_HASH) as client:
-        if last_id == 0:
-            # Birinchi ishga tushish: eski postlarni ko'chirmaymiz, faqat joyni belgilaymiz
-            latest = await client.get_messages(SOURCE, limit=1)
-            last_id = latest[0].id if latest else 0
-            print("Boshlang'ich nuqta:", last_id)
-        else:
-            msgs = [m async for m in client.iter_messages(SOURCE, min_id=last_id, reverse=True)]
-            skipped = [m for m in msgs if m.action or (not m.text and not m.media)]
-            msgs = [m for m in msgs if m not in skipped]
-            if skipped and not msgs:
-                last_id = max(m.id for m in skipped)
-            groups = []
-            for m in msgs:
-                if m.grouped_id and groups and groups[-1][0].grouped_id == m.grouped_id:
-                    groups[-1].append(m)
-                else:
-                    groups.append([m])
-            for g in groups[:MAX_PER_RUN]:
-                caption = fix_text(next((m.text for m in g if m.text), ""))
-                media = [m.media for m in g if m.media]
-                if media:
-                    await client.send_file(TARGET, media if len(media) > 1 else media[0], caption=caption)
-                elif caption:
-                    await client.send_message(TARGET, caption)
-                last_id = g[-1].id
-                open(STATE, "w").write(str(last_id))
-                print("Ko'chirildi:", last_id)
-                await asyncio.sleep(2)
-    open(STATE, "w").write(str(last_id))
+        if state is None:
+            # Yangi tizimga birinchi o'tish: kanalni tozalab, hammasini boshidan ko'chiramiz
+            await purge_target(client)
+            state = {"last_id": 0, "posts": []}
+            save_state(state)
+
+        # 1) Manba kanaldagi hozirgi barcha post id'lari
+        all_msgs = [m async for m in client.iter_messages(SOURCE)]
+        alive = {m.id for m in all_msgs}
+
+        # 2) Manbada o'chirilganlarini bizda ham o'chiramiz
+        keep = []
+        for p in state["posts"]:
+            if all(s in alive for s in p["src"]):
+                keep.append(p)
+            else:
+                try:
+                    await client.delete_messages(TARGET, p["tgt"])
+                    print("O'chirildi:", p["src"])
+                except Exception as e:
+                    print("O'chirishda xato:", e)
+        state["posts"] = keep
+        save_state(state)
+
+        # 3) Yangi postlarni ko'chiramiz (eskisidan yangisiga)
+        new = sorted((m for m in all_msgs if m.id > state["last_id"]), key=lambda m: m.id)
+        groups = []
+        for m in new:
+            if m.action or (not m.text and not m.media):
+                continue
+            if m.grouped_id and groups and groups[-1][0].grouped_id == m.grouped_id:
+                groups[-1].append(m)
+            else:
+                groups.append([m])
+
+        for g in groups[:MAX_PER_RUN]:
+            caption = fix_text(next((m.text for m in g if m.text), ""))
+            media = [m.media for m in g if m.media]
+            if media:
+                sent = await client.send_file(TARGET, media if len(media) > 1 else media[0], caption=caption)
+            else:
+                sent = await client.send_message(TARGET, caption)
+            sent = sent if isinstance(sent, list) else [sent]
+            state["posts"].append({"src": [m.id for m in g], "tgt": [s.id for s in sent]})
+            state["last_id"] = g[-1].id
+            save_state(state)
+            print("Ko'chirildi:", g[-1].id)
+            await asyncio.sleep(2)
+
+        if len(groups) <= MAX_PER_RUN and new:
+            state["last_id"] = max(state["last_id"], new[-1].id)
+        save_state(state)
+        print("Tayyor. Qolgan yangi postlar:", max(0, len(groups) - MAX_PER_RUN))
 
 asyncio.run(main())
