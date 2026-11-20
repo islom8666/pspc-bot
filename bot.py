@@ -11,6 +11,7 @@ TARGET = os.environ["TARGET"]                              # @sizning_kanalingiz
 CONTACT = os.environ.get("CONTACT", "📩 Buyurtma uchun: @PSPC_admin")
 ADD_USD = float(os.environ.get("ADD_USD", "40"))
 STATE = "last_id.txt"
+MAX_PER_RUN = 25   # bir ishga tushishda eng ko'pi bilan shuncha post
 
 PRICE_RE = re.compile(
     r'(?P<pre>\$\s?)(?P<a>\d+(?:[.,]\d+)?)'
@@ -45,13 +46,17 @@ async def main():
             print("Boshlang'ich nuqta:", last_id)
         else:
             msgs = [m async for m in client.iter_messages(SOURCE, min_id=last_id, reverse=True)]
+            skipped = [m for m in msgs if m.action or (not m.text and not m.media)]
+            msgs = [m for m in msgs if m not in skipped]
+            if skipped and not msgs:
+                last_id = max(m.id for m in skipped)
             groups = []
             for m in msgs:
                 if m.grouped_id and groups and groups[-1][0].grouped_id == m.grouped_id:
                     groups[-1].append(m)
                 else:
                     groups.append([m])
-            for g in groups:
+            for g in groups[:MAX_PER_RUN]:
                 caption = fix_text(next((m.text for m in g if m.text), ""))
                 media = [m.media for m in g if m.media]
                 if media:
@@ -59,6 +64,7 @@ async def main():
                 elif caption:
                     await client.send_message(TARGET, caption)
                 last_id = g[-1].id
+                open(STATE, "w").write(str(last_id))
                 print("Ko'chirildi:", last_id)
                 await asyncio.sleep(2)
     open(STATE, "w").write(str(last_id))
