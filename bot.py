@@ -2,7 +2,7 @@
 # - yangi postlarni ko'chiradi (narx +40$, kontakt almashtiriladi)
 # - manba kanalda o'chirilgan postlarni sizning kanalingizdan ham o'chiradi
 import os, re, json, asyncio
-from telethon import TelegramClient
+from telethon import TelegramClient, errors
 from telethon.sessions import StringSession
 
 API_ID = int(os.environ["API_ID"])
@@ -134,10 +134,17 @@ async def main():
             caption = fix_text(next((m.raw_text for m in g if m.raw_text), ""))
             media = [m.media for m in g if m.media]
             if media:
-                sent = await client.send_file(TARGET, media if len(media) > 1 else media[0], caption=caption)
+                try:
+                    sent = await client.send_file(TARGET, media if len(media) > 1 else media[0], caption=caption)
+                    sent = sent if isinstance(sent, list) else [sent]
+                except errors.MediaCaptionTooLongError:
+                    # Matn juda uzun (1024 belgidan ko'p): rasmni alohida, matnni alohida yuboramiz
+                    pics = await client.send_file(TARGET, media if len(media) > 1 else media[0])
+                    pics = pics if isinstance(pics, list) else [pics]
+                    txt = await client.send_message(TARGET, caption[:4096])
+                    sent = pics + [txt]
             else:
-                sent = await client.send_message(TARGET, caption)
-            sent = sent if isinstance(sent, list) else [sent]
+                sent = [await client.send_message(TARGET, caption[:4096])]
             state["posts"].append({"src": [m.id for m in g], "tgt": [s.id for s in sent]})
             state["last_id"] = g[-1].id
             save_state(state)
