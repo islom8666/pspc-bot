@@ -36,6 +36,12 @@ PAY_RE = re.compile(r'^.*\b(USDT|YANDEX|BTC|XRP|TONCOIN)\b.*$', re.M | re.I)
 SELLER_RE = re.compile(r'\s*[/⁄∕／|]\s*[/⁄∕／|].*$', re.M)   # "45$ / / kurbars69" -> "45$"
 
 
+def cut_price(line):
+    # narxdan keyingi hamma narsani kesib tashlaydi: "Price 46$ / / shaznos493" -> "Price 46$"
+    m = re.match(r'^(.*?\d+(?:[.,]\d+)?\s?(?:\$|USD|usd))', line) or re.match(r'^(.*?\$\s?\d+(?:[.,]\d+)?)', line)
+    return m.group(1) if m else line
+
+
 def fix_text(text):
     text = text or ""
     text = REGION_RE.sub(lambda m: ' '.join(re.findall(r'only\s*ps\s*[45]', m.group(0), re.I)), text)
@@ -46,9 +52,9 @@ def fix_text(text):
     text = PHONE_RE.sub('', text)
     text = PRICE_RE.sub(add_price, text)
     lines = [l.strip() for l in text.splitlines() if l.strip()]
-    price = [l for l in lines if re.search(r'price|narx|цена', l, re.I)]
+    price = [cut_price(l) for l in lines if re.search(r'price|narx|цена', l, re.I)]
     only = [l for l in lines if re.fullmatch(r'only\s*ps\s*[45]', l, re.I)]
-    games = [l for l in lines if l not in price and l not in only]
+    games = [l for l in lines if not re.search(r'price|narx|цена', l, re.I) and l not in only]
     out = ""
     if games:
         out += f"{LINE}\n\n" + "\n".join(games) + f"\n{LINE}\n"
