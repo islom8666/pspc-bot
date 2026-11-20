@@ -29,8 +29,18 @@ def add_price(m):
     return m.group('pre') + new if m.group('a') else new + m.group('post')
 
 
+SEP_LINE_RE = re.compile(r'^[\s\-–—―━═▬➖_=·•.*~]+$', re.M)
+REGION_RE = re.compile(r'^\s*Region\s*:.*$', re.M | re.I)
+PAY_RE = re.compile(r'^.*\b(USDT|YANDEX|BTC|XRP|TONCOIN)\b.*$', re.M | re.I)
+SELLER_RE = re.compile(r'\s*/\s*/.*$', re.M)   # "45$ / / kurbars69" -> "45$"
+
+
 def fix_text(text):
     text = text or ""
+    text = REGION_RE.sub(lambda m: ' '.join(re.findall(r'only\s*ps\s*[45]', m.group(0), re.I)), text)
+    text = PAY_RE.sub('', text)
+    text = SELLER_RE.sub('', text)
+    text = SEP_LINE_RE.sub('', text)
     text = USERNAME_RE.sub('', text)
     text = PHONE_RE.sub('', text)
     text = PRICE_RE.sub(add_price, text)
