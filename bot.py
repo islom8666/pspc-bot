@@ -11,7 +11,7 @@ SESSION = os.environ["SESSION"]
 SOURCE = int(os.environ.get("SOURCE", "-1002567127698"))  # PSN OFFLINE
 TARGET = os.environ["TARGET"]                              # @psakkaunt
 CONTACT = os.environ.get("CONTACT", "📩 Buyurtma uchun: @PSPC_admin")
-ADD_USD = float(os.environ.get("ADD_USD", "40"))
+ADD_USD = float(os.environ.get("ADD_USD", "20"))
 STATE = "last_id.txt"      # ichida JSON saqlanadi: oxirgi id + postlar xaritasi
 MAX_PER_RUN = 25           # bir ishga tushishda eng ko'pi bilan shuncha yangi post
 
