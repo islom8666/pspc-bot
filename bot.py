@@ -1,5 +1,5 @@
 # PS.PC — PSN OFFLINE kanalini @psakkaunt bilan sinxronlash (GitHub Actions uchun)
-# - yangi postlarni ko'chiradi (narx +40$, kontakt almashtiriladi)
+# - yangi postlarni ko'chiradi (narxga o'yinlar soniga qarab +10/+20/+30/+40$, kontakt almashtiriladi)
 # - manba kanalda o'chirilgan postlarni sizning kanalingizdan ham o'chiradi
 import os, re, json, asyncio
 from telethon import TelegramClient, errors
@@ -11,7 +11,20 @@ SESSION = os.environ["SESSION"]
 SOURCE = int(os.environ.get("SOURCE", "-1002567127698"))  # PSN OFFLINE
 TARGET = os.environ["TARGET"]                              # @psakkaunt
 CONTACT = os.environ.get("CONTACT", "📩 Buyurtma uchun: @PSPC_admin")
-ADD_USD = float(os.environ.get("ADD_USD", "20"))
+
+# Narx qo'shimchasi o'yinlar soniga qarab:
+#   1–2 ta o'yin  -> +10$
+#   3–4 ta o'yin  -> +20$
+#   5–8 ta o'yin  -> +30$
+#   9+ ta o'yin   -> +40$
+def extra_usd(games_count):
+    if games_count <= 2:
+        return 10
+    if games_count <= 4:
+        return 20
+    if games_count <= 8:
+        return 30
+    return 40
 STATE = "last_id.txt"      # ichida JSON saqlanadi: oxirgi id + postlar xaritasi
 MAX_PER_RUN = 25           # bir ishga tushishda eng ko'pi bilan shuncha yangi post
 
@@ -22,9 +35,9 @@ USERNAME_RE = re.compile(r'(?:https?://)?t\.me/\S+|@\w{4,}')
 PHONE_RE = re.compile(r'\+?\d[\d\s\-()]{8,}\d')
 
 
-def add_price(m):
+def add_price(m, add):
     num = m.group('a') or m.group('b')
-    val = float(num.replace(',', '.')) + ADD_USD
+    val = float(num.replace(',', '.')) + add
     new = str(int(val)) if val.is_integer() else f"{val:.2f}"
     return m.group('pre') + new if m.group('a') else new + m.group('post')
 
@@ -50,7 +63,16 @@ def fix_text(text):
     text = SEP_LINE_RE.sub('', text)
     text = USERNAME_RE.sub('', text)
     text = PHONE_RE.sub('', text)
-    text = PRICE_RE.sub(add_price, text)
+
+    # Avval o'yinlarni sanaymiz (narx va "Only PS5" qatorlaridan tashqari hamma qator = o'yin)
+    raw = [l.strip() for l in text.splitlines() if l.strip()]
+    n_games = sum(1 for l in raw
+                  if not re.search(r'price|narx|цена', l, re.I)
+                  and not re.fullmatch(r'only\s*ps\s*[45]', l, re.I))
+    add = extra_usd(n_games)
+    print(f"O'yinlar soni: {n_games} -> +{add}$")
+
+    text = PRICE_RE.sub(lambda m: add_price(m, add), text)
     lines = [l.strip() for l in text.splitlines() if l.strip()]
     price = [cut_price(l) for l in lines if re.search(r'price|narx|цена', l, re.I)]
     only = [l for l in lines if re.fullmatch(r'only\s*ps\s*[45]', l, re.I)]
